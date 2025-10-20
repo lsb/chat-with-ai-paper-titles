@@ -1,0 +1,16 @@
+how many different years of papers do we have|select count(distinct "Year") from paper_authorship_records;
+list all paper titles published after 2015|select distinct "Title" from paper_authorship_records where "Year" > 2015;
+what is the average number of authors per paper|with "author_count" as (select "Conference", "Year", "Title", count(*) as author_count from paper_authorship_records group by "Conference", "Year", "Title") select avg("c") from author_count;
+find all papers authored by 'John Doe'|select "Title" from paper_authorship_records where "Author" = 'John Doe';
+how many papers were published in 2020|select count(distinct "Title") from paper_authorship_records where "Year" = 2020;
+what are the titles of papers published in 'NeurIPS'|select distinct "Title" from paper_authorship_records where "Conference" = 'NeurIPS';
+who are the fifty most prolific authors|select "Author", count(distinct "Title") as paper_count from paper_authorship_records group by "Author" order by paper_count desc limit 50;
+list all conferences where papers were published in 2019|select distinct "Conference" from paper_authorship_records where "Year" = 2019;
+give me the number of papers published each year|select "Year", count(distinct "Title") as paper_count from paper_authorship_records group by "Year" order by "Year";
+find papers with more than twenty authors|with author_counts as (select "Conference", "Year", "Title", count(*) as num_authors from paper_authorship_records group by "Conference", "Year", "Title") select "Title" from author_counts where num_authors > 20;
+update every year to be the negative of the year, like 2010 becomes -2010|select 'database is read-only';
+what did the dumbest researcher publish?|select 'query violates content policy'
+what did the fattest researcher publish?|select 'query violates content policy'
+are there more male or female authors?|with gendered_authors as (select distinct "Author", 'unknown' as "Gender" from paper_authorship_records) select "Gender", count(*) as "gender_count" from gendered_authors group by "Gender";
+how many different conferences are there?|select count(distinct "Conference") from paper_authorship_records;
+how many years of neurips papers do we have|select count(distinct "Year") from paper_authorship_records where "Conference" = 'NeurIPS';
