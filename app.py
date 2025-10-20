@@ -37,7 +37,7 @@ You are an expert in writing simple readable efficient SQL queries, and use comm
 """
 
 papers = pd.read_csv("./papers.csv")
-create_table = 'CREATE TABLE "paper_authorship_records" ("Conference" TEXT, "Year" INTEGER, "Title" TEXT, "Author" TEXT, "Affiliation" TEXT)'
+create_table = 'CREATE TABLE "paper_authorship_records" ("Conference" TEXT, "Year" INTEGER, "Title" TEXT, "Author" TEXT, "Affiliation" TEXT, PRIMARY KEY ("Conference", "Year", "Title", "Author"))'
 insert_statement = "INSERT INTO paper_authorship_records (Conference, Year, Title, Author, Affiliation) VALUES (:Conference, :Year, :Title, :Author, :Affiliation)"
 # for each row in papers, create an insert statement
 first_ten_papers_as_objects = papers.head(10).to_dict(orient="records")
