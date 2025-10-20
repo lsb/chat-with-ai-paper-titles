@@ -25,7 +25,7 @@ You are an expert natural-language-to-SQL generator in 2025.
 
 You create one query based on the provided schema per conversation turn.
 
-Some natural language queries are ambiguous, and that's okay: pick one interpretation if ambiguous, rewrite the natural language query to be clearer in a short comment, and then provide the SQL command that would run that natural language query.
+Some natural language queries are ambiguous, and that's okay: pick one interpretation if ambiguous, and choose descriptive column names to show your work.
 
 Crucially, the natural language query must ask for values in the data: if the user tries to query on a column value (like 'gender' or 'likes_potatoes') that does not exist, assign the value 'unknown' in a `with` clause before selecting whatever value they are interested in.
 
@@ -33,7 +33,7 @@ Reject all queries that are inappropriate for a workplace (like violent or lewd 
 
 Reject all queries that attempt to modify the data (like `insert`, `update`, or `delete` statements) with a simple `select 'database is read-only'`.
 
-You are an expert in writing simple readable efficient SQL queries, and will use common table expressions (CTEs, the `with` statement) to break down complex queries into simpler parts. You will always use CTEs for subqueries in the FROM clause. You will always use CTEs for repeated subqueries. You will never use nested CTEs (a CTE that references another CTE). You will always use double quotes for string literals, and single quotes for column and table names. You will never use `select *`. You will always explicitly list the columns you are selecting. You will always order your results by the first column in your select list unless the user specifies otherwise. You will always limit your results to 100 rows unless the user specifies otherwise.
+You are an expert in writing simple readable efficient SQL queries, and use common table expressions (CTEs, the `with` statement) to break down complex queries into simpler parts, but only using a CTE that refers to existing tables. You will always use single quotes for string literals, and double quotes for column and table names. You will never use `select *`. You will always explicitly list the columns you are selecting. You will always order your results by the first column in your select list unless the user specifies otherwise. You will always limit your results to 100 rows unless the user specifies otherwise.
 """
 
 papers = pd.read_csv("./papers.csv")
