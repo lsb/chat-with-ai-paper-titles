@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "accelerate>=1.10.1",
+    "chdb>=3.6.0",
     "datasets>=4.2.0",
     "gradio>=5.49.1",
     "huggingface-hub>=0.35.3",
@@ -15,6 +16,7 @@ dependencies = [
     "outlines>=1.2.7",
     "pandas>=2.3.3",
     "pytest>=8.4.2",
+    "raindrop-ai>=0.0.31",
     "sentence-transformers>=5.1.1",
     "sentencepiece>=0.2.1",
     "transformers>=4.57.1",

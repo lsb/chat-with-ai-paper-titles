@@ -5,7 +5,7 @@ from outlines import Transformers
 from outlines.types import CFG
 import transformers
 import pandas as pd
-import sqlite3
+import chdb
 from pathlib import Path
 import json
 
@@ -80,12 +80,9 @@ def generate_sql(
 def respond(message, history, system_message, max_tokens):
     sql_to_run = generate_sql(message, history, system_message, max_tokens)
 
-    new_database = sqlite3.connect(":memory:").cursor()
+    new_database = chdb.connect(":memory:").cursor()
     new_database.execute(create_table)
-    new_database.execute('begin')
-    for paper in papers.to_dict(orient="records"):
-        new_database.execute(insert_statement, paper)
-    new_database.execute('commit')
+    new_database.execute("insert into paper_authorship_records select * from Python(papers)")
 
     try:
         new_database.execute(sql_to_run)
