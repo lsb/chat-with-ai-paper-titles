@@ -1,0 +1,252 @@
+?start: with_clause? select_stmt
+
+sql_script: sql_stmt ";" (sql_stmt ";")*
+sql_stmt: with_clause? (select_stmt | create_table_stmt | insert_stmt)
+
+
+with_clause: WITH RECURSIVE? cte_def ("," cte_def)*
+cte_def: ident ("(" ident ("," ident)* ")")? AS "(" select_stmt ")"
+
+
+select_stmt: select_core (compound_op select_core)* order_by_clause? limit_clause?
+compound_op: UNION ALL? | INTERSECT | EXCEPT
+
+select_core: SELECT (DISTINCT | ALL)? result_column ("," result_column)* (FROM from_clause)? (WHERE expr)? (GROUP BY expr ("," expr)* (HAVING expr)?)? (WINDOW window_def ("," window_def)*)?
+
+result_column: "*" | table_name "." "*" | expr (AS ident)?
+
+from_clause: table_ref (join_op table_ref join_qual?)*
+table_ref: single_table | "(" select_stmt ")" (AS ident)?
+single_table: ((schema_name ".")? table_name | "(" from_clause ")") (AS ident)?
+
+join_op: NATURAL? (LEFT OUTER? | INNER | CROSS)? JOIN
+join_qual: ON expr | USING "(" ident ("," ident)* ")"
+
+order_by_clause: ORDER BY ordering_term ("," ordering_term)*
+ordering_term: expr (COLLATE ident)? (ASC | DESC)? (NULLS (FIRST | LAST))?
+
+limit_clause: LIMIT expr ((OFFSET | ",") expr)?
+
+
+window_def: ident AS "(" window_spec ")"
+window_spec: (PARTITION BY expr ("," expr)*)? (ORDER BY ordering_term ("," ordering_term)*)? frame_spec?
+
+frame_spec: (ROWS | RANGE | GROUPS) frame_extent frame_exclusion?
+frame_extent: frame_start | BETWEEN frame_start AND frame_end
+frame_start: UNBOUNDED PRECEDING | expr PRECEDING | CURRENT ROW
+frame_end: UNBOUNDED FOLLOWING | expr FOLLOWING | CURRENT ROW
+frame_exclusion: EXCLUDE (CURRENT ROW | GROUP | TIES | NO OTHERS)
+
+
+create_table_stmt: CREATE (TEMP | TEMPORARY)? TABLE (IF NOT EXISTS)? ((schema_name ".")? table_name table_schema | (schema_name ".")? table_name AS select_stmt) (WITHOUT ROWID)?
+
+table_schema: "(" column_def ("," column_def)* ("," table_constraint ("," table_constraint)*)? ")"
+
+column_def: ident type_name? column_constraint*
+type_name: ident (ident | "(" signed_number ("," signed_number)? ")")*
+
+column_constraint: PRIMARY KEY sort_order? AUTOINCREMENT?
+                 | NOT NULL
+                 | UNIQUE
+                 | CHECK "(" expr ")"
+                 | DEFAULT (expr | NULL | CURRENT_TIME | CURRENT_DATE | CURRENT_TIMESTAMP)
+                 | COLLATE ident
+                 | REFERENCES foreign_table fk_clause?
+                 | GENERATED ALWAYS AS "(" expr ")" (VIRTUAL | STORED)
+
+table_constraint: PRIMARY KEY "(" indexed_column ("," indexed_column)* ")"
+                | UNIQUE "(" indexed_column ("," indexed_column)* ")"
+                | CHECK "(" expr ")"
+                | FOREIGN KEY "(" ident ("," ident)* ")" REFERENCES foreign_table fk_clause?
+
+indexed_column: ident sort_order? (COLLATE ident)?
+foreign_table: (schema_name ".")? ident
+fk_clause: (ON DELETE fk_action)? (ON UPDATE fk_action)? (MATCH ident)? (DEFERRABLE (INITIALLY (DEFERRED | IMMEDIATE))?)?
+fk_action: SET NULL | SET DEFAULT | CASCADE | RESTRICT | NO ACTION
+sort_order: ASC | DESC
+
+
+insert_stmt: with_clause? INSERT (OR conflict_resolution)? INTO (schema_name ".")? table_name ("(" ident ("," ident)* ")")? (VALUES "(" expr ("," expr)* ")" ("," "(" expr ("," expr)* ")")* | select_stmt | DEFAULT VALUES) upsert_clause?
+
+conflict_resolution: ROLLBACK | ABORT | FAIL | IGNORE | REPLACE
+
+upsert_clause: ON CONFLICT ("(" ident ("," ident)* ")" | CONSTRAINT ident) (DO NOTHING | DO UPDATE SET update_assignment ("," update_assignment)* (WHERE expr)?)
+update_assignment: ident "=" expr
+
+
+?expr: or_expr
+or_expr: and_expr (OR and_expr)*
+and_expr: not_expr (AND not_expr)*
+not_expr: NOT? cmp_expr
+
+cmp_expr: bit_expr (cmp_op | cmp_suffix)?
+
+cmp_op: ("=" | "==" | "!=" | "<>" | "<" | "<=" | ">" | ">=") bit_expr (("=" | "==" | "!=" | "<>" | "<" | "<=" | ">" | ">=") bit_expr)*
+
+cmp_suffix: IS NOT? bit_expr
+          | NOT? IN "(" (select_stmt | expr ("," expr)*) ")"
+          | NOT? LIKE bit_expr (ESCAPE bit_expr)?
+          | NOT? GLOB bit_expr
+          | NOT? MATCH bit_expr
+          | NOT? REGEXP bit_expr
+          | NOT? BETWEEN bit_expr AND bit_expr
+
+bit_expr: add_expr (("<<" | ">>" | "&" | "|") add_expr)*
+add_expr: mul_expr (("+" | "-") mul_expr)*
+mul_expr: concat_expr (("*" | "/" | "%") concat_expr)*
+concat_expr: collate_expr ("||" collate_expr)*
+
+collate_expr: unary_expr (COLLATE ident)*
+unary_expr: ("+" | "-" | "~" | NOT) unary_expr | primary
+
+primary: literal
+       | bind_parameter
+       | (schema_name ".")? table_name "." ident
+       | ident
+       | function_call
+       | window_function
+       | "(" expr ")"
+       | CAST "(" expr AS type_name ")"
+       | CASE expr? WHEN expr THEN expr (WHEN expr THEN expr)* (ELSE expr)? END
+
+function_call: ident "(" DISTINCT? ("*" | expr ("," expr)*) ")"
+window_function: ident "(" DISTINCT? ("*" | expr ("," expr)*) ")" OVER (ident | "(" window_spec ")")
+
+
+literal: numeric_literal | string_literal | blob_literal | NULL | TRUE | FALSE | CURRENT_TIME | CURRENT_DATE | CURRENT_TIMESTAMP
+
+numeric_literal: signed_number
+signed_number: ("+" | "-")? DIGIT+ ("." DIGIT+)? exponent?
+exponent: ("e" | "E") ("+" | "-")? DIGIT+
+
+bind_parameter: "?" DIGIT* | ":" ident | "@" ident | "$" ident
+
+ident: QUOTED_IDENT | UNQUOTED_IDENT
+QUOTED_IDENT: "\"" (/[^"]/ | "\"\"")* "\""
+            | "[" /[^\]]*/ "]"
+            | "`" /[^`]*/ "`"
+UNQUOTED_IDENT: /[a-zA-Z_][a-zA-Z0-9_]*/
+
+schema_name: ident
+table_name: ident
+
+string_literal: "'" (/[^']/ | "''")* "'"
+blob_literal: "X" "'" HEX_DIGIT+ "'"
+
+DIGIT: "0".."9"
+HEX_DIGIT: DIGIT | "A".."F" | "a".."f"
+LETTER: "A".."Z" | "a".."z"
+
+
+SELECT: " select "
+INSERT: " insert "
+UPDATE: " update "
+DELETE: " delete "
+FROM: " from "
+WHERE: " where "
+AND: " and "
+OR: " or "
+NOT: " not "
+IN: " in "
+LIKE: " like "
+BETWEEN: " between "
+IS: " is "
+NULL: " null "
+AS: " as "
+ON: " on "
+JOIN: " join "
+LEFT: " left "
+RIGHT: " right "
+INNER: " inner "
+OUTER: " outer "
+CROSS: " cross "
+NATURAL: " natural "
+GROUP: " group "
+BY: " by "
+HAVING: " having "
+ORDER: " order "
+LIMIT: " limit "
+OFFSET: " offset "
+DISTINCT: " distinct "
+ALL: " all "
+UNION: " union "
+INTERSECT: " intersect "
+EXCEPT: " except "
+WITH: " with "
+RECURSIVE: " recursive "
+CREATE: " create "
+TABLE: " table "
+INTO: " into "
+VALUES: " values "
+DEFAULT: " default "
+CASE: " case "
+WHEN: " when "
+THEN: " then "
+ELSE: " else "
+END: " end "
+CAST: " cast "
+OVER: " over "
+PARTITION: " partition "
+WINDOW: " window "
+ROWS: " rows "
+RANGE: " range "
+GROUPS: " groups "
+UNBOUNDED: " unbounded "
+PRECEDING: " preceding "
+FOLLOWING: " following "
+CURRENT: " current "
+ROW: " row "
+EXCLUDE: " exclude "
+TIES: " ties "
+NO: " no "
+OTHERS: " others "
+PRIMARY: " primary "
+KEY: " key "
+FOREIGN: " foreign "
+REFERENCES: " references "
+UNIQUE: " unique "
+CHECK: " check "
+CONSTRAINT: " constraint "
+COLLATE: " collate "
+ASC: " asc "
+DESC: " desc "
+NULLS: " nulls "
+FIRST: " first "
+LAST: " last "
+IF: " if "
+EXISTS: " exists "
+TEMP: " temp "
+TEMPORARY: " temporary "
+WITHOUT: " without "
+ROWID: " rowid "
+AUTOINCREMENT: " autoincrement "
+GENERATED: " generated "
+ALWAYS: " always "
+VIRTUAL: " virtual "
+STORED: " stored "
+MATCH: " match "
+DEFERRABLE: " deferrable "
+INITIALLY: " initially "
+DEFERRED: " deferred "
+IMMEDIATE: " immediate "
+CASCADE: " cascade "
+RESTRICT: " restrict "
+ACTION: " action "
+SET: " set "
+CONFLICT: " conflict "
+ROLLBACK: " rollback "
+ABORT: " abort "
+FAIL: " fail "
+IGNORE: " ignore "
+REPLACE: " replace "
+NOTHING: " nothing "
+DO: " do "
+USING: " using "
+GLOB: " glob "
+REGEXP: " regexp "
+ESCAPE: " escape "
+TRUE: " true "
+FALSE: " false "
+CURRENT_TIME: " current_time "
+CURRENT_DATE: " current_date "
+CURRENT_TIMESTAMP: " current_timestamp "
