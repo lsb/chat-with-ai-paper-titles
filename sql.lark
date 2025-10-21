@@ -1,4 +1,4 @@
-?start: with_clause? select_stmt
+?start: with_clause? select_stmt ";"
 
 sql_script: sql_stmt ";" (sql_stmt ";")*
 sql_stmt: with_clause? (select_stmt | create_table_stmt | insert_stmt)
@@ -121,7 +121,7 @@ exponent: ("e" | "E") ("+" | "-")? DIGIT+
 
 bind_parameter: "?" DIGIT* | ":" ident | "@" ident | "$" ident
 
-ident: QUOTED_IDENT | UNQUOTED_IDENT
+ident: QUOTED_IDENT 
 QUOTED_IDENT: "\"" (/[^"]/ | "\"\"")* "\""
             | "[" /[^\]]*/ "]"
             | "`" /[^`]*/ "`"
