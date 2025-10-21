@@ -13,7 +13,7 @@ compound_op: UNION ALL? | INTERSECT | EXCEPT
 
 select_core: SELECT (DISTINCT | ALL)? result_column ("," result_column)* (FROM from_clause)? (WHERE expr)? (GROUP BY expr ("," expr)* (HAVING expr)?)? (WINDOW window_def ("," window_def)*)?
 
-result_column: "*" | table_name "." "*" | expr (AS ident)?
+result_column: expr (AS ident)?
 
 from_clause: table_ref (join_op table_ref join_qual?)*
 table_ref: single_table | "(" select_stmt ")" (AS ident)?
@@ -109,8 +109,8 @@ primary: literal
        | CAST "(" expr AS type_name ")"
        | CASE expr? WHEN expr THEN expr (WHEN expr THEN expr)* (ELSE expr)? END
 
-function_call: ident "(" DISTINCT? ("*" | expr ("," expr)*) ")"
-window_function: ident "(" DISTINCT? ("*" | expr ("," expr)*) ")" OVER (ident | "(" window_spec ")")
+function_call: UNQUOTED_IDENT "(" DISTINCT? ("*" | expr ("," expr)*) ")"
+window_function: UNQUOTED_IDENT "(" DISTINCT? ("*" | expr ("," expr)*) ")" OVER (ident | "(" window_spec ")")
 
 
 literal: numeric_literal | string_literal | blob_literal | NULL | TRUE | FALSE | CURRENT_TIME | CURRENT_DATE | CURRENT_TIMESTAMP
