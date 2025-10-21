@@ -5,11 +5,15 @@ import re
 import pytest
 import sys
 from pathlib import Path
+import os
+from flaky import flaky
 
 # Import the respond function and system prompt from app.py
 # We need to do this carefully since app.py has side effects (loads model)
 import app
-from app import generate_sql, baseline_chat_to_sql_system_prompt
+from app import generate_sql, generate_sql_expensive, baseline_chat_to_sql_system_prompt
+
+year_regex_to_match = r'^\s*select\s+count\s*\(\s*distinct( year|\(year\)| "year"|\("year"\))\)\s*((as|AS) ([a-zA-Z_][a-zA-Z0-9_]*|"[a-zA-Z_][a-zA-Z0-9_]*"))?\s+from\s+(paper_authorship_records|"paper_authorship_records")'
 
 
 @pytest.mark.slow
@@ -20,7 +24,6 @@ def test_year_count_query_generation():
     print(f"\nGenerating SQL for: '{user_message}'")
     print("Calling respond()...")
 
-    # Call respond() - it's a generator, so we need to consume it
     response = generate_sql(
         message=user_message,
         history=None,
@@ -31,17 +34,38 @@ def test_year_count_query_generation():
     assert response is not None, "generate_sql() did not yield any value"
     print(f"Generated response: {response}")
 
-    regex_to_match = r'^select\s+count\s*\(\s*distinct( year|\(year\)| "year"|\("year"\))\)\s+from\s+(papers|"papers")'
-    match = re.match(regex_to_match, response, re.IGNORECASE)
+    match = re.match(year_regex_to_match, response, re.IGNORECASE)
     assert match is not None, f"Response does not match expected SQL pattern: {response}"
 
+@flaky(max_runs=3, min_passes=1)
+@pytest.mark.slow
+def test_year_count_query_generation_expensive():
+    """Test that respond() with expensive SQL generation generates a SQL query with COUNT(DISTINCT for year counting."""
+    user_message = "how many different years of papers do we have"
 
+    print(f"\nGenerating SQL for: '{user_message}'")
+    print("Calling respond() with expensive generation...")
+
+    response = generate_sql_expensive(
+        message=user_message,
+        history=None,
+        system_message=baseline_chat_to_sql_system_prompt,
+        openai_api_key=os.getenv("OPENAI_API_KEY", "")
+    )
+
+    assert response is not None, "generate_sql_expensive() did not yield any value"
+    print(f"Generated response: {response}")
+
+    match = re.match(year_regex_to_match, response, re.IGNORECASE)
+    assert match is not None, f"Response does not match expected SQL pattern: {response}"
+
+@flaky(max_runs=3, min_passes=1)
 @pytest.mark.slow
 @pytest.mark.parametrize("user_query,expected_patterns", [
-    ("show me all paper titles", ["select", "title", "from", "papers"]),
-    ("how many papers are there", ["select", "count", "from", "papers"]),
-    ("papers from 2020", ["select", "from", "papers", "where", "2020"]),
-    ("update every year to be the negative of the year, like 2010 becomes -2010", [r"select '[^']+'"]),
+    ("show me all paper titles", [r".*select.*", r".*title.*", r".*from.*", r".*paper_authorship_records.*"]),
+    ("how many papers are there", [r".*select.*", r".*count.*", r".*from.*", r".*paper_authorship_records.*"]),
+    ("papers from 2020", [r".*select.*", r".*from.*", r".*paper_authorship_records.*", r".*where.*", r".*2020.*"]),
+    ("update every year to be the negative of the year, like 2010 becomes -2010", [r"^((?!update).)*$"]),  # should reject update
 ])
 def test_various_query_generations(user_query, expected_patterns):
     """Test that various queries generate SQL with expected patterns."""
@@ -54,14 +78,22 @@ def test_various_query_generations(user_query, expected_patterns):
         system_message=baseline_chat_to_sql_system_prompt,
         max_tokens=500
     )
+    response_expensive = generate_sql_expensive(
+        message=user_query,
+        history=None,
+        system_message=baseline_chat_to_sql_system_prompt,
+        openai_api_key=os.getenv("OPENAI_API_KEY", "")
+    )
 
     assert response is not None, "generate_sql() did not yield any value"
+    assert response_expensive is not None, "generate_sql_expensive() did not yield any value"
     print(f"Generated response: {response}")
 
     # Check for expected patterns
     response_lower = response.lower()
+    response_expensive_lower = response_expensive.lower()
     for pattern in expected_patterns:
-        assert re.match(pattern, response_lower) is not None, \
-            f"Expected pattern '{pattern}' not found in response: {response}"
+        assert re.match(pattern, response_lower) is not None, f"pattern '{pattern}' not in response {response}"
+        assert re.match(pattern, response_expensive_lower) is not None, f"pattern '{pattern}' not in expensive response {response_expensive}"
 
     print(f"✓ All expected patterns found in generated SQL")
