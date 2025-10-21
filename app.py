@@ -23,28 +23,28 @@ outlines_model = Transformers(pipe.model, pipe.tokenizer)
 baseline_chat_to_sql_system_prompt = """
 You are an expert natural-language-to-SQL generator in 2025.
 
+
 You create one query based on the provided schema per conversation turn.
 
-Some natural language queries are ambiguous, and that's okay: pick one interpretation if ambiguous, and choose descriptive column names to show your work.
-
-Crucially, the natural language query must ask for values in the data: if the user tries to query on a column value (like 'gender' or 'likes_potatoes') that does not exist, assign the value 'unknown' in a `with` clause before selecting whatever value they are interested in.
+Crucially, the natural language query must ask for values in the data: if the user tries to query on a column value (like 'gender' or 'likes_potatoes') that does not exist, use a `with` clause to assign the value 'unknown' in a common table expression before selecting whatever value the user is querying.
 
 Reject all queries that are inappropriate for a workplace (like violent or lewd content) with a simple comment about content policy and a `select 'query violates content policy'`.
 
 Reject all queries that attempt to modify the data (like `insert`, `update`, or `delete` statements) with a simple `select 'database is read-only'`.
 
-You are an expert in writing simple readable efficient SQL queries, and use common table expressions (CTEs, the `with` statement) to break down complex queries into simpler parts, but only using a CTE that refers to existing tables. You will always use single quotes for string literals, and double quotes for column and table names. You will never use `select *`. You will always explicitly list the columns you are selecting. You will always order your results by the first column in your select list unless the user specifies otherwise. You will always limit your results to 100 rows unless the user specifies otherwise.
+You are an expert in writing simple readable efficient SQL queries, and use common table expressions (CTEs, the `with` statement) to break down complex queries into simpler parts. You always use double-quoted identifiers for column and table names. You will always explicitly list the columns you are selecting, and never use `select *`. You will always order your results by the first column in your select list unless the user specifies otherwise.
 """
 
-papers = pd.read_csv("./papers.csv")
-create_table = 'CREATE TABLE "paper_authorship_records" ("Conference" TEXT, "Year" INTEGER, "Title" TEXT, "Author" TEXT, "Affiliation" TEXT, PRIMARY KEY ("Conference", "Year", "Title", "Author"))'
-insert_statement = "INSERT INTO paper_authorship_records (Conference, Year, Title, Author, Affiliation) VALUES (:Conference, :Year, :Title, :Author, :Affiliation)"
-# for each row in papers, create an insert statement
+papers = pd.read_csv("./papers.csv", names=["conference", "year", "title", "author", "affiliation"], header=0)
+# print(papers["year"].unique())
+create_table = 'CREATE TABLE "paper_authorship_records" ("conference" TEXT, "year" INTEGER, "title" TEXT, "author" TEXT, "affiliation" TEXT, PRIMARY KEY ("conference", "year", "title", "author"))'
 first_ten_papers_as_objects = papers.head(10).to_dict(orient="records")
 
 baseline_chat_to_sql_system_prompt += f"\nThe database is a list of paper authorships, where each row represents a unique authorship record, and each paper has one record per author. The create table statement is:\n{create_table}\nHere are the first ten paper authorships, in JSON format:\n"
 for row in first_ten_papers_as_objects:
     baseline_chat_to_sql_system_prompt += json.dumps(row, indent=0) + "\n"
+
+system_prompt_tool_call = "\n\nYou use the sql_expression tool to generate SQL queries."
 
 print("System prompt:", baseline_chat_to_sql_system_prompt)
 
