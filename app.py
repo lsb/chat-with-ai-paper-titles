@@ -114,6 +114,8 @@ def generate_sql_expensive(message, history, system_message, max_tokens):
 
 def generate_sql_expensive_streaming(message, history, system_message):
     # TODO: figure out why streaming takes as long to return the first and final chunk with CFG grammar as the non-streaming version (much like Outlines, vs llama.cpp)
+    # for x in generate_sql_expensive_stream("please write a sql query to count how many users there are in a users table", None, ""):
+    #     print(x, datetime.now())
     client = OpenAI(api_key=openai_api_key)
     buffer = ""
     with client.responses.stream(
