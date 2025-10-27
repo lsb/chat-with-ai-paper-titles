@@ -10,14 +10,19 @@ from pathlib import Path
 import json
 from openai import OpenAI, BadRequestError
 from concurrent.futures import ThreadPoolExecutor
+import raindrop.analytics as raindrop
+import os
+import uuid
+
+raindrop.write_key = os.environ.get("RAINDROP_WRITE_KEY", "")
+raindrop.set_debug_logs(True)
+openai_api_key = os.getenv("OPENAI_API_KEY", "")
 
 dtype = torch.bfloat16
 device = "cuda" if torch.cuda.is_available() else "cpu"
 # device = None
-# model = "Qwen/Qwen3-4B-Thinking-2507"
 model = "HuggingFaceTB/SmolLM2-1.7B-Instruct"
 pipe = transformers.pipeline("text-generation", model, dtype=dtype, device=device, )
-pipe.model = torch.compile(pipe.model, mode="max-autotune")
 # Create outlines model wrapper
 outlines_model = Transformers(pipe.model, pipe.tokenizer)
 
@@ -39,7 +44,7 @@ You are an expert in writing simple readable SQL queries, and use common table e
 
 papers = pd.read_csv("./papers.csv", names=["conference", "year", "title", "author", "affiliation"], header=0)
 # print(papers["year"].unique())
-create_table = 'CREATE TABLE "paper_authorship_records" ("conference" TEXT, "year" INTEGER, "title" TEXT, "author" TEXT, "affiliation" TEXT, PRIMARY KEY ("conference", "year", "title", "author"))'
+create_table = 'CREATE TABLE "paper_authorships" ("conference" TEXT, "year" INTEGER, "title" TEXT, "author" TEXT, "affiliation" TEXT, PRIMARY KEY ("conference", "year", "title", "author"))'
 # find ten randomly chosen papers
 ten_papers_as_objects = papers.sample(n=10, random_state=42).to_dict(orient="records")
 
@@ -77,7 +82,7 @@ def generate_sql(
 
     return response
 
-def generate_sql_expensive(message, history, system_message, openai_api_key):
+def generate_sql_expensive(message, history, system_message, max_tokens):
     client = OpenAI(api_key=openai_api_key)
     try:
         response = client.responses.create(
@@ -85,6 +90,37 @@ def generate_sql_expensive(message, history, system_message, openai_api_key):
             # instructions=system_message + system_prompt_tool_call,
             input=system_message + system_prompt_tool_call + f"\n\nUser query: {json.dumps({"user_query": message})}",
             reasoning={"effort": "high"},
+            max_output_tokens=max_tokens,
+            tools=[
+                {
+                    "type": "custom",
+                    "name": "sql_expression",
+                    "description": "Generates a SQL query based on the provided database schema and user question as per content guidelines.",
+                    "format": {
+                        "type": "grammar",
+                        "syntax": "lark",
+                        "definition": sql_grammar,
+                    },
+                },
+            ]
+        )
+        print(response.output)
+        if len(response.output) == 1: # the output is [thinking, sql], so if only one item, just thinking
+            return "just thinking... :("
+        return response.output[-1].input
+    except BadRequestError as e:
+        print(f"OpenAI API BadRequestError: {e}")
+        return f"-- Bad Request! {json.dumps(str(e))}"
+
+def generate_sql_expensive_streaming(message, history, system_message):
+    # TODO: figure out why streaming takes as long to return the first and final chunk with CFG grammar as the non-streaming version (much like Outlines, vs llama.cpp)
+    client = OpenAI(api_key=openai_api_key)
+    buffer = ""
+    with client.responses.stream(
+        model="gpt-5-mini",
+        # instructions=system_message + system_prompt_tool_call,
+        input=system_message + system_prompt_tool_call + f"\n\nUser query: {json.dumps({"user_query": message})}",
+        reasoning={"effort": "high"},
         max_output_tokens=10000,  # maybe we need to think a lot?
         tools=[
             {
@@ -97,21 +133,22 @@ def generate_sql_expensive(message, history, system_message, openai_api_key):
                     "definition": sql_grammar,
                 },
             },
-        ]
-        )
-        print(response.output)
-        if len(response.output) == 1:
-            return "" # the only thing GPT did was thinking for 10000 tokens
-        return response.output[-1].input
-    except BadRequestError as e:
-        print(f"OpenAI API BadRequestError: {e}")
-        return f"-- Bad Request! {json.dumps(str(e))}"
+        ],
+    ) as response_stream:
+        for event in response_stream:
+            if event.type == "response.output_text.delta":
+                buffer += event.delta
+                yield {"response": "partial", "delta": event.delta, "text": buffer}
+            elif event.type == "response.completed":
+                yield {"response": "complete", "text": event.response.output}
+            # elif event.error:
+                # yield {"response": None, "error": event.error}
 
 
 def run_sql_query(sql_to_run):
     new_database = chdb.connect(":memory:").cursor()
     new_database.execute(create_table)
-    new_database.execute("insert into paper_authorship_records select * from Python(papers)")
+    new_database.execute("insert into paper_authorships select * from Python(papers)")
 
     try:
         new_database.execute(sql_to_run)
@@ -123,39 +160,37 @@ def run_sql_query(sql_to_run):
         return f"Error executing SQL `{sql_to_run}`: {e}"
 
 
-def respond(message, history, system_message, max_tokens, openai_api_key):
+def respond(message, history, system_message, max_tokens):
+    event_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    convo_id = str(uuid.uuid4())
+    interaction = raindrop.begin(event_id=event_id, event="chat_message", user_id=user_id, input=message, convo_id=convo_id)
     if openai_api_key == "":
         sql_to_run = generate_sql(message, history, system_message, max_tokens)
-        yield "Using a small open-source model (please enter your openai api key below):" + run_sql_query(sql_to_run)
+        yield f"_(Using the SmolLM2-1.7B model, started to run `{sql_to_run}`)_\n"
+        result = run_sql_query(sql_to_run)
+        success = "Error executing" not in result
+        interaction.add_attachments([{"type": "text", "name": "success", "value": str(success), "role": "output"}])
+        interaction.finish(output=sql_to_run)
+        yield run_sql_query(sql_to_run)
     else:
-        result = "Using OpenAI API, with a small open-source model as fallback..."
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            future_sql_expensive = executor.submit(generate_sql_expensive, message, history, system_message, openai_api_key)
-            future_sql = executor.submit(generate_sql, message, history, system_message, max_tokens)
-            try:
-                sql = future_sql.result(timeout=120) # we run faster than 1 tok/s
-                result += "\n\n*Fast model*\n" + run_sql_query(sql)
-                yield result
-            except TimeoutError:
-                result += "\n\n*Fast model timed out after two minutes*\n"
-                yield result
-            try:
-                sql_expensive = future_sql_expensive.result(timeout=300) # give it up to 5 minutes
-                result += "\n\n*Expensive model*\n" + run_sql_query(sql_expensive)
-                yield result
-            except TimeoutError:
-                result += "\n\n*Expensive model timed out after five minutes*\n"
-                yield result
-
+        sql_to_run = generate_sql_expensive(message, history, system_message, max_tokens)
+        interaction.finish(output=sql_to_run)
+        yield f"_(Using the GPT-5 model, started to run `{sql_to_run}`)_"
+        result = run_sql_query(sql_to_run)
+        success = "Error executing" not in result
+        interaction.add_attachments([{"type": "text", "name": "success", "value": str(success), "role": "output"}])
+        yield run_sql_query(sql_to_run)
+        interaction.finish(output=sql_to_run)
 
 demo = gr.ChatInterface(
     respond,
     type="messages",
     additional_inputs=[
         gr.Textbox(value=baseline_chat_to_sql_system_prompt, label="System message"),
-        gr.Slider(minimum=1, maximum=65536, value=100, step=1, label="Max tokens"),
-        gr.Textbox(value="", label="OpenAI API Key", type="password"),
+        gr.Slider(minimum=1, maximum=65536, value=32768, step=1, label="Max tokens"),
     ],
+    title="Chat with AI Paper Titles - SQL Generator",
 )
 
 if __name__ == "__main__":

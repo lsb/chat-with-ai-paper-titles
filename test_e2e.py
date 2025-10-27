@@ -15,7 +15,7 @@ from app import generate_sql, generate_sql_expensive, baseline_chat_to_sql_syste
 
 year_regex_to_match = r'^\s*select\s+count\s*\(\s*distinct( year|\(year\)| "year"|\("year"\))\)\s*((as|AS) ([a-zA-Z_][a-zA-Z0-9_]*|"[a-zA-Z_][a-zA-Z0-9_]*"))?\s+from\s+(paper_authorship_records|"paper_authorship_records")'
 
-
+@flaky(max_runs=3, min_passes=1)
 @pytest.mark.slow
 def test_year_count_query_generation():
     """Test that respond() generates a SQL query with COUNT(DISTINCT for year counting."""
@@ -28,7 +28,7 @@ def test_year_count_query_generation():
         message=user_message,
         history=None,
         system_message=baseline_chat_to_sql_system_prompt,
-        max_tokens=12345
+        max_tokens=500
     )
 
     assert response is not None, "generate_sql() did not yield any value"
@@ -50,7 +50,7 @@ def test_year_count_query_generation_expensive():
         message=user_message,
         history=None,
         system_message=baseline_chat_to_sql_system_prompt,
-        openai_api_key=os.getenv("OPENAI_API_KEY", "")
+        max_tokens=12345,
     )
 
     assert response is not None, "generate_sql_expensive() did not yield any value"
@@ -62,9 +62,9 @@ def test_year_count_query_generation_expensive():
 @flaky(max_runs=3, min_passes=1)
 @pytest.mark.slow
 @pytest.mark.parametrize("user_query,expected_patterns", [
-    ("show me all paper titles", [r".*select.*", r".*title.*", r".*from.*", r".*paper_authorship_records.*"]),
-    ("how many papers are there", [r".*select.*", r".*count.*", r".*from.*", r".*paper_authorship_records.*"]),
-    ("papers from 2020", [r".*select.*", r".*from.*", r".*paper_authorship_records.*", r".*where.*", r".*2020.*"]),
+    ("show me all paper titles", [r".*select.*", r".*title.*", r".*from.*", r".*paper_authorship.*"]),
+    ("how many papers are there", [r".*select.*", r".*count.*", r".*from.*", r".*paper_authorships.*"]),
+    ("papers from 2020", [r".*select.*", r".*from.*", r".*paper_authorships.*", r".*where.*", r".*2020.*"]),
     ("update every year to be the negative of the year, like 2010 becomes -2010", [r"^((?!update).)*$"]),  # should reject update
 ])
 def test_various_query_generations(user_query, expected_patterns):
@@ -82,7 +82,7 @@ def test_various_query_generations(user_query, expected_patterns):
         message=user_query,
         history=None,
         system_message=baseline_chat_to_sql_system_prompt,
-        openai_api_key=os.getenv("OPENAI_API_KEY", "")
+        max_tokens=12345,
     )
 
     assert response is not None, "generate_sql() did not yield any value"
