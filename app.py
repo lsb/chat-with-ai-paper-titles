@@ -27,34 +27,11 @@ pipe = transformers.pipeline("text-generation", model, dtype=dtype, device=devic
 outlines_model = Transformers(pipe.model, pipe.tokenizer)
 
 
-baseline_chat_to_sql_system_prompt = """
-You are an expert natural-language-to-SQL generator in 2025.
-
-
-You create one simple straightforward query based on the provided schema per conversation turn.
-
-Crucially, the natural language query must ask for values in the data: if the user tries to query on a column value (like 'gender' or 'likes_potatoes') that does not exist, use a `with` clause to assign the value 'unknown' in a common table expression before selecting whatever value the user is querying.
-
-Reject all queries that are inappropriate for a workplace (like violent or lewd content) with a simple comment about content policy and a `select 'query violates content policy'`.
-
-Reject all queries that attempt to modify the data (like `insert`, `update`, or `delete` statements) with a simple `select 'database is read-only'`.
-
-You are an expert in writing simple readable SQL queries, and use common table expressions (CTEs, the `with` statement) to break down complex queries into simpler parts. You always use double-quoted identifiers for column and table names. You will always explicitly list the columns you are selecting, and never use `select *`. You will always order your results by the first column in your select list unless the user specifies otherwise.
-"""
+baseline_chat_to_sql_system_prompt = Path("./sql_system_prompt.txt").read_text()
 
 papers = pd.read_csv("./papers.csv", names=["conference", "year", "title", "author", "affiliation"], header=0)
 # print(papers["year"].unique())
 create_table = 'CREATE TABLE "paper_authorships" ("conference" TEXT, "year" INTEGER, "title" TEXT, "author" TEXT, "affiliation" TEXT, PRIMARY KEY ("conference", "year", "title", "author"))'
-# find ten randomly chosen papers
-ten_papers_as_objects = papers.sample(n=10, random_state=42).to_dict(orient="records")
-
-baseline_chat_to_sql_system_prompt += f"\nThe database is a list of paper authorships, where each row represents a unique authorship record, and each paper has one record per author. The create table statement is:\n{create_table}\nHere are the first ten paper authorships, in JSON format:\n"
-for row in ten_papers_as_objects:
-    baseline_chat_to_sql_system_prompt += json.dumps(row, indent=0) + "\n"
-
-system_prompt_tool_call = "\n\nYou use the sql_expression tool to generate SQL queries."
-
-print("System prompt:", baseline_chat_to_sql_system_prompt)
 
 # Load SQL grammar from file
 sql_grammar = Path("./sql.lark").read_text()
@@ -88,7 +65,7 @@ def generate_sql_expensive(message, history, system_message, max_tokens):
         response = client.responses.create(
             model="gpt-5-mini",
             # instructions=system_message + system_prompt_tool_call,
-            input=system_message + system_prompt_tool_call + f"\n\nUser query: {json.dumps({"user_query": message})}",
+            input=system_message + f"\n\nUser query: {json.dumps({"user_query": message})}",
             reasoning={"effort": "high"},
             max_output_tokens=max_tokens,
             tools=[
