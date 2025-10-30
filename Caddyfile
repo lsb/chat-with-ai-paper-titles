@@ -1,0 +1,3 @@
+94607.leebutterman.com {
+    reverse_proxy localhost:7860
+}
