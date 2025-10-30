@@ -84,7 +84,7 @@ def generate_sql_expensive(message, history, system_message, max_tokens):
         print(response.output)
         if len(response.output) == 1: # the output is [thinking, sql], so if only one item, just thinking
             return "just thinking... :("
-        return response.output[-1].input
+        return " ".join([t.text for t in response.output[-1].content])
     except BadRequestError as e:
         print(f"OpenAI API BadRequestError: {e}")
         return f"-- Bad Request! {json.dumps(str(e))}"
@@ -98,7 +98,7 @@ def generate_sql_expensive_streaming(message, history, system_message):
     with client.responses.stream(
         model="gpt-5-mini",
         # instructions=system_message + system_prompt_tool_call,
-        input=system_message + system_prompt_tool_call + f"\n\nUser query: {json.dumps({"user_query": message})}",
+        input=system_message + f"\n\nUser query: {json.dumps({"user_query": message})}",
         reasoning={"effort": "high"},
         max_output_tokens=10000,  # maybe we need to think a lot?
         tools=[
