@@ -24,11 +24,12 @@ def sql_query_df(sql_to_run): # using sqlite, for correctness. Runs all 883 trai
         return pd.DataFrame({"error": [f"Error executing SQL `{sql_to_run}`: {e}"]})
 
 
-# read in training_data.psv. split on the first pipe, the first part is the query and the rest (which may have unescape pipes) is the answer
-
 model = "openai/gpt-5"
 not_so_smol_model = "openai/gpt-5-mini"
-smol_model = "ollama_chat/smollm2:1.7b"
+smol_model = "ollama_chat/qwen34bcpu"
+# smol_model = "ollama_chat/qwen3:4b-thinking-2507-q8_0"
+# smol_model = "ollama_chat/smollm217b-cpu"
+# smol_model = "ollama_chat/smollm2:1.7b"
 
 if os.getenv("NO_OLLAMA"):
     refinement_lm = dspy.LM(model=model, temperature=1.0, api_key=os.getenv("OPENAI_API_KEY"), max_tokens=50000, cache=False)
@@ -47,7 +48,7 @@ if os.getenv("NO_OLLAMA"):
         # ]
     )
 else:
-    lm = dspy.LM(model=smol_model, temperature=1.0, api_base="http://localhost:11434", api_key="", max_tokens=500, cache=False)
+    lm = dspy.LM(model=smol_model, temperature=1.0, api_base="http://localhost:11434", api_key="", max_tokens=50000, cache=False)
     # refinement_lm = dspy.LM(model=model, temperature=1.0, api_base="http://localhost:11434", api_key="", max_tokens=32000, cache=False)
     refinement_lm = dspy.LM(model=model, temperature=1.0, api_key=os.getenv("OPENAI_API_KEY"), max_tokens=32000, cache=False)
 
@@ -62,7 +63,7 @@ for line in tqdm(training_data_lines):
     query = line['query']
     answer = line['sql']
     print(f"Loading query {query} with answer {answer}")
-    solution = "we'll compute it later!" # sql_query_rows(answer)
+    solution = "we'll compute it later!" # sql_query_rows(answer) # TODO: automate manual data cleaning
     if 'Error executing' not in solution:  # Check if the solution is valid
         training_data.append(
             dspy.Example(
@@ -83,7 +84,8 @@ program = dspy.ChainOfThought(GenerateResponse)
 
 def metric_with_feedback(example, prediction, trace=None, pred_name=None, pred_trace=None):
     correct_answer = example['answer'].strip().lower()
-    predicted_answer = prediction.answer.strip().lower()
+    print(prediction)
+    predicted_answer = prediction.answer.split("</think>")[-1].strip().lower()
     if correct_answer == predicted_answer:
         print("🎉")
         return dspy.Prediction(score=1, feedback="100% Correct")
